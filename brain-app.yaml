@@ -1,7 +1,7 @@
 dialect: brain-app/v1
 id: poker-log
 name: Poker Log
-version: 0.1.0
+version: 0.1.1
 description: "Log poker sessions, track profit and hourly rate, and keep session notes in memory."
 license: MIT
 author:
