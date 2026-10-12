@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker Log</title>
+<style>
+:root{--bg:#0e0c0b;--panel:#171412;--line:#2a2420;--text:#e8e0d5;--muted:#8a7d6e;--accent:#c9a96e;--ok:#7fc99c;--err:#e07a6a}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f7f3ec;--panel:#fffdf9;--line:#e2d9cc;--text:#2a2420;--muted:#7a6d5e;--accent:#8a6a2e;--ok:#2f7d4f;--err:#b5452f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:24px;margin:0 0 8px;font-weight:600}
+p.lead{color:var(--muted);margin:0 0 24px}
+label{display:block;font-size:13px;color:var(--muted);margin:16px 0 8px}
+input,select,textarea{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit}
+textarea{min-height:160px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+button{background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer}
+button.primary{background:var(--accent);color:var(--bg)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-top:16px}
+.status{font-size:13px;color:var(--muted);min-height:24px;margin-top:8px}
+.status.ok{color:var(--ok)}.status.err{color:var(--err)}
+.out{white-space:pre-wrap}
+.sources{font-size:13px;color:var(--muted);margin-top:8px}
+ul.plain{list-style:none;padding:0;margin:0}
+ul.plain li{border-top:1px solid var(--line);padding:8px 0}
+.muted{color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main>
+<h1>Poker Log</h1>
+<p class="lead">Record each session. Totals stay in this browser; notes can go to your brain's memory.</p>
+<div class="grid">
+<div><label for="date">Date</label><input id="date" type="date"></div>
+<div><label for="game">Game</label><input id="game" placeholder="NLH cash"></div>
+<div><label for="stakes">Stakes</label><input id="stakes" placeholder="1/2"></div>
+<div><label for="hours">Hours</label><input id="hours" type="number" min="0" step="0.25"></div>
+<div><label for="buyin">Buy-in total</label><input id="buyin" type="number" min="0" step="0.01"></div>
+<div><label for="cashout">Cash-out</label><input id="cashout" type="number" min="0" step="0.01"></div>
+</div>
+<label for="notes">Notes (key hands, leaks, tilt)</label>
+<textarea id="notes" style="min-height:96px"></textarea>
+<div class="row"><button class="primary" id="add">Add session</button><label class="muted" style="margin:0;display:flex;gap:8px;align-items:center"><input type="checkbox" id="mem" style="width:auto" checked> Also save to memory</label></div>
+<div class="status" id="status"></div>
+<div class="card"><div class="grid" id="totals"></div></div>
+<div class="card" style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Game</th><th>Hours</th><th>Result</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<div class="row"><button id="csv">Export CSV</button></div></div>
+</main>
+<script>
+const Brain = (() => {
+  let n = 0;
+  const pending = new Map();
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin) return;
+    const m = e.data;
+    if (!m || m.type !== 'reply' || !pending.has(m.request_id)) return;
+    const { resolve, reject } = pending.get(m.request_id);
+    pending.delete(m.request_id);
+    m.ok ? resolve(m.result) : reject(m.error || { code: 'unknown' });
+  });
+  function call(type, payload) {
+    return new Promise((resolve, reject) => {
+      if (window.parent === window) {
+        reject({ code: 'no_host', detail: 'Open this app from your brain to use it.' });
+        return;
+      }
+      const id = 'r' + (++n) + '-' + Date.now();
+      pending.set(id, { resolve, reject });
+      window.parent.postMessage({ type, payload, request_id: id }, location.origin);
+    });
+  }
+  return {
+    ask: (messages, max_tokens) => call('llm.complete', max_tokens ? { messages, max_tokens } : { messages }),
+    remember: (layer, content, metadata) => call('memory.write', { layer, content, metadata: metadata || {} }),
+    info: () => call('meta.brain_info'),
+  };
+})();
+function errText(e) {
+  if (!e) return 'Something went wrong.';
+  if (e.detail && typeof e.detail === 'string') return e.detail;
+  return e.code ? 'Error: ' + e.code : String(e);
+}
+function setStatus(el, text, kind) { el.textContent = text; el.className = 'status' + (kind ? ' ' + kind : ''); }
+function store(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function showSources(el, sources) {
+  if (!sources || !sources.length) { el.textContent = ''; return; }
+  const names = sources.map((s) => s.title || s.doc_name || s.source || s.document || JSON.stringify(s)).slice(0, 8);
+  el.textContent = 'Sources: ' + names.join(', ');
+}
+const $ = (id) => document.getElementById(id);
+const KEY = 'poker.sessions';
+$('date').value = new Date().toISOString().slice(0, 10);
+const money = (n) => (n < 0 ? '-' : '') + '$' + Math.abs(n).toFixed(2);
+function render() {
+  const s = store(KEY, []);
+  const net = s.reduce((a, x) => a + (x.cashout - x.buyin), 0);
+  const hrs = s.reduce((a, x) => a + x.hours, 0);
+  const wins = s.filter((x) => x.cashout > x.buyin).length;
+  $('totals').innerHTML = [['Sessions', s.length], ['Net', money(net)], ['Hours', hrs.toFixed(2)], ['Per hour', hrs ? money(net / hrs) : '-'], ['Winning sessions', s.length ? Math.round(100 * wins / s.length) + '%' : '-']]
+    .map(([k, v]) => `<div><div class="muted" style="font-size:13px">${k}</div><div style="font-size:18px">${v}</div></div>`).join('');
+  $('rows').innerHTML = s.length ? s.map((x, i) => `<tr><td>${esc(x.date)}</td><td>${esc(x.game)} ${esc(x.stakes)}</td><td>${x.hours}</td><td style="color:var(${x.cashout >= x.buyin ? '--ok' : '--err'})">${money(x.cashout - x.buyin)}</td><td><button data-i="${i}" style="padding:0 8px">Delete</button></td></tr>`).reverse().join('')
+    : '<tr><td colspan="5" class="muted">No sessions yet.</td></tr>';
+}
+$('rows').addEventListener('click', (e) => {
+  const i = e.target.dataset.i; if (i === undefined) return;
+  if (!confirm('Delete this session?')) return;
+  const s = store(KEY, []); s.splice(Number(i), 1); save(KEY, s); render();
+});
+$('add').addEventListener('click', async () => {
+  const x = { date: $('date').value, game: $('game').value.trim(), stakes: $('stakes').value.trim(), hours: Number($('hours').value) || 0, buyin: Number($('buyin').value) || 0, cashout: Number($('cashout').value) || 0, notes: $('notes').value.trim() };
+  if (!x.date || (!x.buyin && !x.cashout)) { setStatus($('status'), 'Add a date and a buy-in or cash-out.', 'err'); return; }
+  const s = store(KEY, []); s.push(x); s.sort((a, b) => a.date.localeCompare(b.date)); save(KEY, s); render();
+  ['hours', 'buyin', 'cashout', 'notes'].forEach((k) => { $(k).value = ''; });
+  if (!$('mem').checked) { setStatus($('status'), 'Session added.', 'ok'); return; }
+  setStatus($('status'), 'Session added. Saving to memory...');
+  try {
+    await Brain.remember('episodic', `Poker session ${x.date}: ${x.game} ${x.stakes}, ${x.hours} h, buy-in ${money(x.buyin)}, cash-out ${money(x.cashout)}, result ${money(x.cashout - x.buyin)}.${x.notes ? '\nNotes: ' + x.notes : ''}`, { app: 'poker-log', date: x.date });
+    setStatus($('status'), 'Session added and saved to memory.', 'ok');
+  } catch (e) { setStatus($('status'), 'Session added here, but not saved to memory: ' + errText(e), 'err'); }
+});
+$('csv').addEventListener('click', () => {
+  const s = store(KEY, []);
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  const lines = [['date', 'game', 'stakes', 'hours', 'buyin', 'cashout', 'result', 'notes'].join(',')]
+    .concat(s.map((x) => [x.date, x.game, x.stakes, x.hours, x.buyin, x.cashout, (x.cashout - x.buyin).toFixed(2), x.notes].map(q).join(',')));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'poker-sessions.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+render();
+</script>
+</body>
+</html>

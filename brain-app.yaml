@@ -1,0 +1,22 @@
+dialect: brain-app/v1
+id: poker-log
+name: Poker Log
+version: 0.1.0
+description: "Log poker sessions, track profit and hourly rate, and keep session notes in memory."
+license: MIT
+author:
+  name: Gregory German
+  contact: gregorygerman777@gmail.com
+  url: https://github.com/gregorygerman777-hub
+repo: https://github.com/gregorygerman777-hub/brain-app-poker-log
+tab:
+  label: Poker
+  route: /poker
+  order: 150
+entries:
+  ui_bundle: dist
+requires_layers:
+  - layer: episodic
+    mode: append
+permissions:
+  - memory.write
