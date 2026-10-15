@@ -52,7 +52,7 @@ th,td{text-align:left;padding:8px;border-top:1px solid var(--border)}
 <label for="notes">Notes (key hands, leaks, tilt)</label>
 <textarea id="notes" style="min-height:96px"></textarea>
 <div class="row"><button class="primary" id="add">Add session</button><label class="muted" style="margin:0;display:flex;gap:8px;align-items:center"><input type="checkbox" id="mem" style="width:auto" checked> Also save to memory</label></div>
-<div class="status" id="status"></div>
+<div class="status" id="status" role="status" aria-live="polite"></div>
 <div class="card"><div class="grid" id="totals"></div></div>
 <div class="card" style="overflow-x:auto"><table><thead><tr><th>Date</th><th>Game</th><th>Hours</th><th>Result</th><th></th></tr></thead><tbody id="rows"></tbody></table>
 <div class="row"><button id="csv">Export CSV</button></div></div>
